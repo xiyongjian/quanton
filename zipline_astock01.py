@@ -10,6 +10,18 @@ from zipline.api import (order, symbol)
 import numpy as np
 import re
 
+import sys
+import logbook
+# logging setup
+if True :
+    # handler = logbook.StreamHandler(sys.stdout, level=logbook.INFO)
+    # handler.formatter.format_string = '{record.time}|{record.level_name}|{record.filename}|{record.module}|{record.func_name}|{record.lineno}|{record.message}'
+    handler = logbook.StreamHandler(sys.stdout, level=logbook.DEBUG)
+    handler.formatter.format_string = '{record.time}|{record.level_name}|{record.module}|{record.func_name}|{record.lineno}|{record.message}'
+    handler.push_application()
+    log = logbook.Logger("zipline_astock01")
+    # or using this : with handler.applicationbound():
+
 if True:
     from pandas_datareader.google.daily import GoogleDailyReader
     @property
@@ -201,21 +213,21 @@ price[0] > price[-1]
     pass
 
 if __name__ == '__main__' :
-    print("it's __main__, do something")
+    log.info("it's __main__, do something")
 
-    print('load data')
+    log.info('load data')
     data = OrderedDict()
     # df = pd.read_csv('data/603997.csv', index_col='date', parse_dates=['date']).tail(2770)
     df = pd.read_csv('data/603997.csv', index_col='date', parse_dates=['date']).tail(100)
     df['test'] = [i for i in range(len(df.index))]
-    print(df.columns)
-    print(df.head(5))
+    log.info(df.columns)
+    log.info(df.head(5))
     data['603997'] = df
     panel = pd.Panel(data)
     algo_obj = TradingAlgorithm(initialize=initialize, handle_data=handle_data)
 
-    print('run algorithm')
+    log.info('run algorithm')
     perf_manual = algo_obj.run(panel)
     # print(perf_manual)
-    print('done')
+    log.info('done')
 
