@@ -183,7 +183,9 @@ def createStrategy(str) :
     statements = str.splitlines()
     for i, s in enumerate(statements):
         print("%2d statement : %s"%(i, s))
-        t = re.sub(r'(\w+\d*)\[([-]*\d+)\]', r'batch.get("\1", \2)', s)
+        # t = re.sub(r'(\w+[0-9a-z]*)\[([-]*\d+)\]', r'batch.get("\1", \2)', s)
+        # regex for identifier  : [^\d\W]\w*
+        t = re.sub(r'([^\d\W]\w*)\[([-]*\d+)\]', r'batch.get("\1", \2)', s)
         t = t.strip()
         print("    translate : %s"%t)
         proc_steps.append(t)
