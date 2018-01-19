@@ -163,9 +163,6 @@ def handle_data(context, data):
         order(context.symbols[0], 10)
 
     # test Factor
-    if sn == 29 :
-        f = Factor('sma5[0] - 0.5');
-        print("factor %s, value : %s"%(f, f.apply( next(iter(context.batches.values())) )))
     ##################################################################
 
 # match expressiong
