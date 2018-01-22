@@ -56,6 +56,16 @@ if True :
         # name : watch_lists name
         # until_sn : get all symbols until this sn
         # return : symbol list in the list until_sn
+        def get_watch_list_at(self, name, pos) :
+            assert pos <= 0, "get_watch_list_at, pos %d must <= 0"%pos
+            until_sn = self.current_sn + pos
+            ret = set()
+            if name in self.watch_lists :
+                for sn, l in self.watch_lists[name].items() :
+                    if sn == until_sn :
+                        ret.update(l);
+            return list(ret)
+
         def get_watch_list(self, name, pos) :
             assert pos <= 0, "get_watch_list, pos %d must <= 0"%pos
             until_sn = self.current_sn + pos
@@ -64,7 +74,6 @@ if True :
                 for sn, l in self.watch_lists[name].items() :
                     if sn <= until_sn :
                         ret.update(l);
-                pass
             return list(ret)
 
         def set_watch_list(self, name, watch_list) :
@@ -114,7 +123,7 @@ if True :
 
                 self.base_sn = new_base_sn
                 idx = sn - self.base_sn
-
+                self.set_watch_list("ALL", self.symbols)
                 pass
 
             # prepare watch list
@@ -141,6 +150,19 @@ if True :
             self.current_sn = sn
             pass
 
+        # todo : get_watch_list_param_hist(self, watch_list, name, from , to)
+        def get_watch_list_param(self, watch_list, name, pos) :
+            assert watch_list in self.watch_lists, "watch_list %s must be in watch_lists [%s]"%(watch_list, self.watch_lists.keys())
+            symbols = set()
+            for sn, l in self.watch_lists[watch_list].items() :
+                symbols.update(l);
+            # log.info("symbols %s"%symbols)
+            # log.info("get name %s pos %d : %s"%(name, pos, self.get(name, pos)))
+            # log.info("get name %s pos %d type : %s"%(name, pos, type(self.get(name, pos))))
+            return self.get(name, pos)[list(symbols)];
+            pass
+
+        # todo : get_hist(self, name, from, to)
         def get(self, name, pos) :
             assert pos <= 0, "batch get() pos (%d) must <= 0"%pos
             params = ['sma5', 'sma20', 'price']
@@ -185,7 +207,28 @@ def handle_data(context, data):
     log.info("-------- SN %d -----------"%sn)
     prepare_batch(sn, context, data)
     # strategy = context.strategy
-    context.strategy.perform(context.batch)     # will call order or sell
+    # context.strategy.perform(context.batch)     # will call order or sell
+    context.strategy.perform2(context.batch)     # will call order or sell
+
+    buy_list = context.batch.get_watch_list_at('buy', 0);
+    log.info("buy list : %s"%buy_list)
+    sell_list = context.batch.get_watch_list_at('sell', 0);
+    log.info("sell list : %s"%sell_list)
+
+    buy_list = list(set(buy_list) - set(sell_list))
+    log.info("adjust buy list : %s"%buy_list)
+
+    for s in buy_list :
+        log.info("buy order 10 : %s"%s)
+        order(s, 10)
+    for s in sell_list :
+        log.info("sell order -10 : %s"%s)
+        order(s, -10)
+
+    # log.info("get watch list buy: %s"%context.batch.watch_lists['buy'])
+    # log.info("get watch list param, buy, price, 0 : %s"%context.batch.get_watch_list_param('buy', 'price', 0))
+
+
 
     ##################################################################
     # for debug only
@@ -211,7 +254,11 @@ def prepare_batch(sn, context, data) :
 class Strategy() :
     def __init__(self, procedures):
         self.procedures = procedures
-        self.total_steps = len(procedures)
+        self.total_proces = len(procedures)
+        for i, p in enumerate(self.procedures) :
+            log.info("procecure : %d"%i)
+            dump_proc(p)
+
         pass
 
     def initialize(self, batch) :
@@ -267,6 +314,35 @@ class Strategy() :
         # batch.current_sn
         pass
 
+    def perform2(self, batch) :
+        for proc in self.procedures :
+            dump_proc(proc)
+            input = proc['input']
+            output = proc['output']
+            input_watch_list = batch.get_watch_list(input, 0)
+            log.info("input watch list %s : [%s]"%(input, input_watch_list))
+            if len(input_watch_list) < 1 :
+                log.info("input watch list empty : %s"%input)
+                continue;
+            # no need - output_watch_list = batch.get_watch_list(output)
+            condition = proc['condition'];
+            x = eval(condition)     # this is the result in input_watch_list
+            result = [input_watch_list[i] for i, b in enumerate(x) if b == True]
+            log.info("eval result : %s"%x)
+            log.info("eval result symbols : %s"%result)
+            if proc['output_method'] == 'set' :
+                batch.set_watch_list(output, result)
+            else : # 'add'
+                batch.add_watch_list(output, result)
+        pass
+
+## leave here for reference
+#    try :
+#        x = eval(statement)
+#        print("eval statement : %s, result : %s, type %s"%(statement, x, type(x)));
+#    except Exception as e :
+#        print("eval statement : %s"%statement);
+#        raise e
 # match expressiong
 # example : sma[0] - 0.5
 # match = re.match(r' *(\w+)\[(\d+)\]( *[+\-\*/] *\d+(\.\d+)*)', expr)
@@ -293,14 +369,22 @@ def createStrategy(str) :
             log.info("comments or empty, pass")
             continue;
         ss = s.split(",")
+
+        def parse_output(s) :
+            log.info("parse_io : %s"%s)
+            match = re.match(r'(add|set) +(.*)', s)
+            return match.group(1), match.group(2)
+
         proc = {}
         proc['name'] = ss[0].strip()
         proc['type'] = ss[1].strip()
         proc['input'] = ss[2].strip()
-        t = re.sub(r'([^\d\W]\w*)\[([-]*\d+)\]', r'batch.get(LIST, "\1", \2)', ss[3])
+        t = re.sub(r'([^\d\W]\w*)\[([-]*\d+)\]', r'batch.get_watch_list_param(LIST, "\1", \2)', ss[3])
         t = re.sub(r'LIST', "'%s'"%proc['input'], t)
         proc['condition'] = t
-        proc['output'] = ss[4].strip()
+        # proc['output'] = ss[4].strip()
+        log.info("try to parse output : %s"%ss[4].strip())
+        proc['output_method'], proc['output'] = parse_output(ss[4].strip())
         dump_proc(proc)
         inputs.add(proc['input'])
         outputs.add(proc['output'])
@@ -313,8 +397,8 @@ def createStrategy(str) :
 
 def dump_proc(proc) :
     assert proc['type'] in ['filter', 'gate'], "proc type %s must be 'filter' or 'gate'"%proc['type']
-    log.info("proc name %s, type %s, input %s, output %s, condition %s" \
-             %(proc['name'], proc['type'], proc['input'], proc['output'], proc['condition']))
+    log.info("proc name %s, type %s, input : %s, output : %s %s, condition %s" \
+             %(proc['name'], proc['type'], proc['input'], proc['output_method'], proc['output'], proc['condition']))
     pass
 
 def createStatements() :
@@ -323,10 +407,11 @@ def createStatements() :
 # comment line, ignore (emtpy line ignor either)
 # buy and bought are two special list
 # proposed scripting :
-0, gate, ALL  ,   (sma20[0] > price[0]),  list_0
-0, filter, list_0, (slope5[0] > -0.1 and slope5[0] < 0.1),  list_1
-0, filter, list_1, (sma5[0] > sma20[0]),  buy
-3, filter, buy[:-2], (price[-2] > price[-1] and price[-1] > price[0]), sell
+0, gate, ALL  ,   (sma20[0] > price[0]), add list_0
+# 0, filter, list_0, (slope5[0] > -0.1 and slope5[0] < 0.1),  set list_1
+0, filter, list_0, (sma5[0] > sma20[0]),  add buy
+0, filter, buy, (price[-2] > price[-1]) & (price[-1] > price[0]), add sell
+# 0, filter, buy, (price[-1] > price[0]), add sell
 '''
 
 if __name__ == '__main__' :
@@ -350,5 +435,5 @@ if __name__ == '__main__' :
 
     log.info('run algorithm')
     perf_manual = algo_obj.run(panel)
-    # print(perf_manual)
+    print(perf_manual)
     log.info('done')
