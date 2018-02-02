@@ -6,11 +6,14 @@ all other conditions apply following, sequentially -> buy list
 from collections import OrderedDict
 import pytz
 from datetime import timedelta
-from zipline import TradingAlgorithm
+# from zipline import TradingAlgorithm
+from gateway.algorithm import TradingAlgorithm
 import pandas as pd
 from zipline.api import (order, symbol)
 import numpy as np
 import re
+
+from cn_stock_holidays.zipline.exchange_calendar_shsz import SHSZExchangeCalendar
 
 import sys
 import logbook
@@ -137,10 +140,10 @@ if True :
             assert idx + 1 <= self.window_size, "current index %d + 1 must <= window_size %d"%(idx, self.window_size)
             for name, df in self.factors.items() :
                 if name == 'sma5' :
-                    df.iloc[idx] = data.history(self.symbols, "close", 5, '1d').mean()
+                    df.iloc[idx] = data.history(self.symbols, "close", 5, '1m').mean()
                     pass
                 elif name == 'sma20' :
-                    df.iloc[idx] = data.history(self.symbols, "close", 20, '1d').mean()
+                    df.iloc[idx] = data.history(self.symbols, "close", 20, '1m').mean()
                     pass
                 elif name == 'slope5' :
                     # calculate slope in previous 5 points
@@ -184,7 +187,7 @@ if True :
                 return self.factors['sma20'].iloc[idx]
                 pass
 
-stocks = ['603997']
+stocks = ['601336']
 
 def initialize(context):
     context.symbols = [symbol(s) for s in stocks]
@@ -201,45 +204,64 @@ def handle_data(context, data):
     sn = sn + 1
     context.sn = sn
 
+    if True :
+        # pc = data.current(context.symbols, 'close')
+        # print("current : \n%s"%pc)
+        pass
+
     if sn < 25 :
         return
 
     log.info("-------- SN %d -----------, date : %s"%(sn, data.current_dt))
-    prepare_batch(sn, context, data)
-    # strategy = context.strategy
-    # context.strategy.perform(context.batch)     # will call order or sell
-    context.strategy.perform2(context.batch)     # will call order or sell
+    if True :
+        if sn == 99 :       # for debug/testing only
+            # context.batch.dump();
+            print("history 5 : \n%s"%data.history(context.symbols, 'close', 5, '1m'))
 
-    buy_list = context.batch.get_watch_list_at('buy', 0);
-    log.info("buy list : %s"%buy_list)
-    sell_list = context.batch.get_watch_list_at('sell', 0);
-    log.info("sell list : %s"%sell_list)
+    if False :
+        log.info("-------- SN %d -----------, date : %s"%(sn, data.current_dt))
+        prepare_batch(sn, context, data)
+        if True :
+            if sn == 99 :       # for debug/testing only
+                context.batch.dump();
+                print("history 5 : \n%s"%data.history(context.symbols, 'close', 5, '1m'))
+                # print("current : \n%s"%data.current(context.symbols, 'close'))
 
-    buy_list = list(set(buy_list) - set(sell_list))
-    log.info("adjust buy list : %s"%buy_list)
+        if False :
+            # strategy = context.strategy
+            # context.strategy.perform(context.batch)     # will call order or sell
+            context.strategy.perform2(context.batch)     # will call order or sell
 
-    for s in buy_list :
-        log.info("buy order 10 : %s"%s)
-        order(s, 10)
-    for s in sell_list :
-        log.info("sell order -10 : %s"%s)
-        order(s, -10)
+            buy_list = context.batch.get_watch_list_at('buy', 0);
+            log.info("buy list : %s"%buy_list)
+            sell_list = context.batch.get_watch_list_at('sell', 0);
+            log.info("sell list : %s"%sell_list)
 
-    # log.info("get watch list buy: %s"%context.batch.watch_lists['buy'])
-    # log.info("get watch list param, buy, price, 0 : %s"%context.batch.get_watch_list_param('buy', 'price', 0))
+            buy_list = list(set(buy_list) - set(sell_list))
+            log.info("adjust buy list : %s"%buy_list)
+
+            for s in buy_list :
+                log.info("buy order 10 : %s"%s)
+                order(s, 10)
+            for s in sell_list :
+                log.info("sell order -10 : %s"%s)
+                order(s, -10)
+
+            # log.info("get watch list buy: %s"%context.batch.watch_lists['buy'])
+            # log.info("get watch list param, buy, price, 0 : %s"%context.batch.get_watch_list_param('buy', 'price', 0))
 
 
 
-    ##################################################################
-    # for debug only
-    if sn == 99 :       # for debug/testing only
-        context.batch.dump();
-        print("history 5 : \n%s"%data.history(context.symbols, 'close', 5, '1d'))
-        print("current : \n%s"%data.current(context.symbols, 'close'))
+            ##################################################################
+            # for debug only
+            if sn == 99 :       # for debug/testing only
+                context.batch.dump();
+                print("history 5 : \n%s"%data.history(context.symbols, 'close', 5, '1d'))
+                print("current : \n%s"%data.current(context.symbols, 'close'))
 
-    if False and sn >= 28 :
-        print("portfolio, %s"%context.portfolio)
-        order(context.symbols[0], 10)
+            if False and sn >= 28 :
+                print("portfolio, %s"%context.portfolio)
+                order(context.symbols[0], 10)
 
     # test Factor
     ##################################################################
@@ -425,19 +447,27 @@ if __name__ == '__main__' :
     log.info('load data')
     data = OrderedDict()
     # df = pd.read_csv('data/603997.csv', index_col='date', parse_dates=['date']).tail(2770)
-    df = pd.read_csv('data/603997.csv', index_col='date', parse_dates=['date']).tail(100)
+    # df = pd.read_csv('data/603997.csv', index_col='date', parse_dates=['date']).tail(100)
+    # df = pd.read_csv('data/StockPrice_5Min_Subset.csv', index_col='date', parse_dates=['date']).tail(100)
+    df = pd.read_csv('data/601336.SH.csv', index_col='time', parse_dates=['time']) #.tail(100)
+    df.rename(columns={'time' : 'date'}, inplace=True)
     df['test'] = [i for i in range(len(df.index))]
     log.info(df.columns)
     log.info(df.head(5))
-    data['603997'] = df
+    log.info(df.index)
+    data['601336'] = df
     panel = pd.Panel(data)
-    algo_obj = TradingAlgorithm(initialize=initialize, handle_data=handle_data)
+    algo_obj = TradingAlgorithm(initialize=initialize, handle_data=handle_data,
+                                trading_calendar = SHSZExchangeCalendar(),
+                                data_frequency = 'minute',
+                                clock_file = "data/clock.csv")
 
     log.info('run algorithm')
     perf_manual = algo_obj.run(panel)
-    print(perf_manual)
+    if False :
+        print(perf_manual)
 
-    if True :
+    if False :
         import pickle
         file = "e:\\perf.p"
         log.info("write performance to pickle : %s"%file)
